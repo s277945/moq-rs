@@ -121,6 +121,7 @@ impl Subscriber {
 				sequence: object.group,
 				priority: object.priority,
 				expires: object.expires,
+				timestamp: object.timestamp,
 			})?
 		};
 

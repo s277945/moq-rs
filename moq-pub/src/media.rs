@@ -45,7 +45,7 @@ impl Media {
 		.duration_since(UNIX_EPOCH).expect("Error");
 
 		let timestamp = VarInt::try_from(times.as_secs() as u64 * 1000 +
-		times.subsec_millis() as u64);
+		times.subsec_millis() as u64).expect("Timestamp value limit exceeded");
 
 		// Create the catalog track with a single segment.
 		let mut init_track = broadcast.create_track("0.mp4")?;
@@ -141,7 +141,7 @@ impl Media {
 			.duration_since(UNIX_EPOCH).expect("Error");
 
 			let timestamp = VarInt::try_from(times.as_secs() as u64 * 1000 +
-			times.subsec_millis() as u64);
+			times.subsec_millis() as u64).expect("Timestamp value limit exceeded");
 
 		let segment = track.create_segment(segment::Info {
 			sequence: VarInt::ZERO,
@@ -323,8 +323,8 @@ impl Track {
 		let times = SystemTime::now()
 		.duration_since(UNIX_EPOCH).expect("Error");
 
-		let timestamp = VarInt::try_from(times.as_secs() as u64 * 1000 +
-		times.subsec_millis() as u64);
+		let t_stamp = VarInt::try_from(times.as_secs() as u64 * 1000 +
+		times.subsec_millis() as u64).expect("Timestamp value limit exceeded");
 
 		// Create a new segment.
 		let segment = self.track.create_segment(segment::Info {
@@ -335,7 +335,7 @@ impl Track {
 
 			// Delete segments after 10s.
 			expires: Some(time::Duration::from_secs(10)),
-			timestamp: timestamp,
+			timestamp: t_stamp,
 		})?;
 
 		// Create a single fragment for the segment that we will keep appending.
