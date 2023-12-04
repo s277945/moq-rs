@@ -5,6 +5,7 @@ use tokio::io::AsyncReadExt;
 use crate::coding::{AsyncRead, AsyncWrite};
 use crate::coding::{Decode, DecodeError, Encode, EncodeError, VarInt};
 use crate::setup;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Sent by the publisher as the header of each data stream.
 #[derive(Clone, Debug)]
@@ -29,7 +30,7 @@ pub struct Object {
 	/// An optional size, allowing multiple OBJECTs on the same stream.
 	pub size: Option<VarInt>,
 
-	/// An optional timestamp, allowing multiple OBJECTs on the same stream.
+	/// origin timestamp.
 	pub timestamp: VarInt,
 }
 
@@ -68,6 +69,15 @@ impl Object {
 		};
 
 		let timestamp = VarInt::decode(r).await?;
+
+		let times = SystemTime::now()
+		.duration_since(UNIX_EPOCH).expect("Error");
+
+		let timestamp2 = VarInt::try_from(times.as_secs() as u64 * 1000 +
+		times.subsec_millis() as u64).expect("Timestamp value limit exceeded");
+
+		let elapsed = VarInt::try_from(timestamp2.to_string().parse::<u64>().unwrap() - timestamp.to_string().parse::<u64>().unwrap()).expect("Timestamp value limit exceeded");
+		println!("Incoming packet, id: {sequence}, elapsed latency {elapsed}");
 
 		Ok(Self {
 			track,
