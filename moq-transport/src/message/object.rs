@@ -76,8 +76,8 @@ impl Object {
 		let timestamp2 = VarInt::try_from(times.as_secs() as u64 * 1000 +
 		times.subsec_millis() as u64).expect("Timestamp value limit exceeded");
 
-		let elapsed = VarInt::try_from(timestamp2.to_string().parse::<u64>().unwrap() - timestamp.to_string().parse::<u64>().unwrap()).expect("Timestamp value limit exceeded");
-		println!("Incoming packet, id: {sequence}, elapsed latency {elapsed}");
+		// let elapsed = VarInt::try_from(timestamp2.to_string().parse::<u64>().unwrap() - timestamp.to_string().parse::<u64>().unwrap()).expect("Timestamp value limit exceeded");
+		println!("Incoming packet, id: {sequence}, elapsed latency {timestamp2}  {timestamp}");
 
 		Ok(Self {
 			track,
