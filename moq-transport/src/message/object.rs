@@ -28,6 +28,9 @@ pub struct Object {
 
 	/// An optional size, allowing multiple OBJECTs on the same stream.
 	pub size: Option<VarInt>,
+
+	/// An optional timestamp, allowing multiple OBJECTs on the same stream.
+	pub timestamp: VarInt,
 }
 
 impl Object {
@@ -64,6 +67,8 @@ impl Object {
 			false => None,
 		};
 
+		let timestamp = VarInt::decode(r).await?;
+
 		Ok(Self {
 			track,
 			group,
@@ -71,6 +76,7 @@ impl Object {
 			priority,
 			expires,
 			size,
+			timestamp
 		})
 	}
 
@@ -102,6 +108,8 @@ impl Object {
 		if let Some(size) = self.size {
 			size.encode(w).await?;
 		}
+
+		self.timestamp.encode(w).await?;
 
 		Ok(())
 	}

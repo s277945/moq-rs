@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 export RUST_LOG="${RUST_LOG:-debug}"
 
 # Connect to localhost by default.
-HOST="${HOST:-localhost}"
+HOST="${HOST:-"130.192.16.111"}"
 PORT="${PORT:-4443}"
 ADDR="${ADDR:-$HOST:$PORT}"
 
