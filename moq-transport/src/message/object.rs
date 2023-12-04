@@ -77,7 +77,7 @@ impl Object {
 		times.subsec_millis() as u64).expect("Timestamp value limit exceeded");
 
 		// let elapsed = VarInt::try_from(timestamp2.to_string().parse::<u64>().unwrap() - timestamp.to_string().parse::<u64>().unwrap()).expect("Timestamp value limit exceeded");
-		println!("Incoming packet, id: {group}, elapsed latency {timestamp2}  {timestamp}");
+		println!("Incoming packet, id: {group}, local timestamp: {timestamp2}, incoming timestamp:  {timestamp}");
 
 		Ok(Self {
 			track,
@@ -130,7 +130,7 @@ impl Object {
 		let id = self.group;
 		let t = self.timestamp;
 		// let elapsed = VarInt::try_from(timestamp2.to_string().parse::<u64>().unwrap() - timestamp.to_string().parse::<u64>().unwrap()).expect("Timestamp value limit exceeded");
-		println!("Outbound packet, id: {id}, elapsed latency {timestamp2}  {t}");
+		println!("Outbound packet, id: {id}, local timestamp: {timestamp2}, outbound timestamp:  {t}");
 
 		Ok(())
 	}
