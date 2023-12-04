@@ -5,7 +5,7 @@ use tokio::io::AsyncReadExt;
 use crate::coding::{AsyncRead, AsyncWrite};
 use crate::coding::{Decode, DecodeError, Encode, EncodeError, VarInt};
 use crate::setup;
-use std::time::{SystemTime, UNIX_EPOCH};
+// use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Sent by the publisher as the header of each data stream.
 #[derive(Clone, Debug)]
