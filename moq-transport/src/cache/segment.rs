@@ -37,6 +37,8 @@ pub struct Info {
 
 	// Cache the segment for at most this long.
 	pub expires: Option<time::Duration>,
+
+	pub timestamp: VarInt,
 }
 
 struct State {

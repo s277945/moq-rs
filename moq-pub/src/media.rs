@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::time;
 use tokio::io::AsyncReadExt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Media {
 	// We hold on to publisher so we don't close then while media is still being published.
@@ -40,12 +41,19 @@ impl Media {
 		// Parse the moov box so we can detect the timescales for each track.
 		let moov = mp4::MoovBox::read_box(&mut moov_reader, moov_header.size)?;
 
+		let times = SystemTime::now()
+		.duration_since(UNIX_EPOCH).expect("Error");
+
+		let timestamp = VarInt::try_from(times.as_secs() as u64 * 1000 +
+		times.subsec_millis() as u64);
+
 		// Create the catalog track with a single segment.
 		let mut init_track = broadcast.create_track("0.mp4")?;
 		let init_segment = init_track.create_segment(segment::Info {
 			sequence: VarInt::ZERO,
 			priority: 0,
 			expires: None,
+			timestamp: timestamp,
 		})?;
 
 		// Create a single fragment, optionally setting the size
@@ -129,10 +137,17 @@ impl Media {
 		init_track_name: &str,
 		moov: &mp4::MoovBox,
 	) -> Result<(), anyhow::Error> {
+			let times = SystemTime::now()
+			.duration_since(UNIX_EPOCH).expect("Error");
+
+			let timestamp = VarInt::try_from(times.as_secs() as u64 * 1000 +
+			times.subsec_millis() as u64);
+
 		let segment = track.create_segment(segment::Info {
 			sequence: VarInt::ZERO,
 			priority: 0,
 			expires: None,
+			timestamp: timestamp,
 		})?;
 
 		let mut tracks = Vec::new();
@@ -304,6 +319,13 @@ impl Track {
 			.try_into()
 			.context("timestamp too large")?;
 
+
+		let times = SystemTime::now()
+		.duration_since(UNIX_EPOCH).expect("Error");
+
+		let timestamp = VarInt::try_from(times.as_secs() as u64 * 1000 +
+		times.subsec_millis() as u64);
+
 		// Create a new segment.
 		let segment = self.track.create_segment(segment::Info {
 			sequence: VarInt::try_from(self.sequence).context("sequence too large")?,
@@ -313,6 +335,7 @@ impl Track {
 
 			// Delete segments after 10s.
 			expires: Some(time::Duration::from_secs(10)),
+			timestamp: timestamp,
 		})?;
 
 		// Create a single fragment for the segment that we will keep appending.

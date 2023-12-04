@@ -14,7 +14,6 @@ use crate::{
 };
 
 use super::{Control, SessionError};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Serves broadcasts over the network, automatically handling subscriptions and caching.
 // TODO Clone specific fields when a task actually needs it.
@@ -197,12 +196,6 @@ impl Publisher {
 		while let Some(mut fragment) = segment.fragment().await? {
 			log::trace!("serving fragment: {:?}", fragment);
 
-			let times = SystemTime::now()
-			.duration_since(UNIX_EPOCH).expect("Error");
-
-			let timestamp = VarInt::try_from(times.as_secs() as u64 * 1000 +
-			times.subsec_millis() as u64);
-
 			let object = message::Object {
 				track: id,
 
@@ -214,7 +207,7 @@ impl Publisher {
 				// Properties of the fragment
 				sequence: fragment.sequence,
 				size: fragment.size.map(VarInt::try_from).transpose()?,
-				timestamp: timestamp.expect("Timestamp value limit exceeded"),
+				timestamp: segment.timestamp,
 			};
 
 			object
