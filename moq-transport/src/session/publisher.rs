@@ -3,8 +3,10 @@ use std::{
 	sync::{Arc, Mutex},
 };
 
+use bytes::Bytes;
 use tokio::task::AbortHandle;
 use webtransport_quinn::Session;
+use tokio::io::AsyncWriteExt;
 
 use crate::{
 	cache::{broadcast, segment, track, CacheError},
@@ -188,7 +190,6 @@ impl Publisher {
 		log::trace!("serving group: {:?}", segment);
 
 		let mut stream = self.webtransport.open_uni().await?;
-
 		// Convert the u32 to a i32, since the Quinn set_priority is signed.
 		let priority = (segment.priority as i64 - i32::MAX as i64) as i32;
 		stream.set_priority(priority).ok();
@@ -216,8 +217,16 @@ impl Publisher {
 				.map_err(|e| SessionError::Unknown(e.to_string()))?;
 
 			while let Some(chunk) = fragment.chunk().await? {
-				//log::trace!("writing chunk: {:?}", chunk);
-				stream.write_all(&chunk).await?;
+				if chunk[0] == 123 {stream.write_all(&chunk).await?;
+					log::error!("writing chunk: {:?}", chunk);}
+				else {
+					self.webtransport.send_datagram(chunk.clone()).await?;
+					log::error!("writing chunk: {:?} {:?} {:?} {:?}", chunk[0], chunk[1], chunk[2], chunk[3]);
+					let c: [u8; 4] =[0, 0, 0, 100];
+					stream.write_all(&c).await?;
+					} // write all data in datagrams
+				// stream.write_all(&chunk).await?;
+				// stream.write_u8(1 as u8).await.map_err(|e| SessionError::Unknown(e.to_string()))?; // write datagrams dispatch message
 			}
 		}
 

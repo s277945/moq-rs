@@ -93,6 +93,7 @@ impl Subscriber {
 	async fn run_streams(self) -> Result<(), SessionError> {
 		loop {
 			// Accept all incoming unidirectional streams.
+			// let stream = self.webtransport.read_datagram().await?;
 			let stream = self.webtransport.accept_uni().await?;
 			let this = self.clone();
 
