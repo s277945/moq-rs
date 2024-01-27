@@ -45,6 +45,11 @@ struct State {
 }
 
 impl State {
+
+	pub fn get_num(&self) -> Result<usize, CacheError> {
+	// Don't check closed, so we can return from cache.
+	Ok(self.tracks.len())
+}
 	pub fn get(&self, name: &str) -> Result<Option<track::Subscriber>, CacheError> {
 		// Don't check closed, so we can return from cache.
 		Ok(self.tracks.get(name).cloned())
@@ -201,6 +206,11 @@ impl Subscriber {
 
 		// Request a new track if it does not exist.
 		state.into_mut().request(name)
+	}
+
+	pub fn get_tracks_num(&self) -> Result<usize, CacheError> {
+		let state = self.state.lock();
+		return state.get_num()
 	}
 
 	/// Check if the broadcast is closed, either because the publisher was dropped or called [Publisher::close].

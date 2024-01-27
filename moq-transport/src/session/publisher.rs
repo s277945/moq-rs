@@ -6,7 +6,6 @@ use std::{
 use bytes::Bytes;
 use tokio::task::AbortHandle;
 use webtransport_quinn::Session;
-use tokio::io::AsyncWriteExt;
 
 use crate::{
 	cache::{broadcast, segment, track, CacheError},
@@ -26,6 +25,7 @@ pub struct Publisher {
 	webtransport: Session,
 	control: Control,
 	source: broadcast::Subscriber,
+	tracks_num: usize
 }
 
 impl Publisher {
@@ -35,6 +35,7 @@ impl Publisher {
 			control,
 			subscribes: Default::default(),
 			source,
+			tracks_num: 0
 		}
 	}
 
@@ -146,7 +147,8 @@ impl Publisher {
 		}
 
 		let mut track = self.source.get_track(&msg.name)?;
-
+		let t_num = self.source.get_tracks_num()?;
+		self.tracks_num = t_num;
 		// TODO only clone the fields we need
 		let mut this = self.clone();
 
@@ -188,6 +190,7 @@ impl Publisher {
 
 	async fn run_segment(&self, id: VarInt, segment: &mut segment::Subscriber) -> Result<(), SessionError> {
 		log::trace!("serving group: {:?}", segment);
+		log::error!("{:?}", self.tracks_num);
 
 		let mut stream = self.webtransport.open_uni().await?;
 		// Convert the u32 to a i32, since the Quinn set_priority is signed.
@@ -199,7 +202,6 @@ impl Publisher {
 
 			let object = message::Object {
 				track: id,
-
 				// Properties of the segment
 				group: segment.sequence,
 				priority: segment.priority,
@@ -210,24 +212,47 @@ impl Publisher {
 				size: fragment.size.map(VarInt::try_from).transpose()?,
 				timestamp: segment.timestamp,
 			};
-
-			object
-				.encode(&mut stream, &self.control.ext)
-				.await
-				.map_err(|e| SessionError::Unknown(e.to_string()))?;
-
-			while let Some(chunk) = fragment.chunk().await? {
-				if chunk[0] == 123 {stream.write_all(&chunk).await?;
-					log::error!("writing chunk: {:?}", chunk);}
-				else {
-					self.webtransport.send_datagram(chunk.clone()).await?;
-					log::error!("writing chunk: {:?} {:?} {:?} {:?}", chunk[0], chunk[1], chunk[2], chunk[3]);
-					let c: [u8; 4] =[0, 0, 0, 100];
-					stream.write_all(&c).await?;
-					} // write all data in datagrams
-				// stream.write_all(&chunk).await?;
-				// stream.write_u8(1 as u8).await.map_err(|e| SessionError::Unknown(e.to_string()))?; // write datagrams dispatch message
+			let mut datagram_mode = false;
+			let mut datagram_number = 0;
+			if let Some(chunk) = fragment.chunk().await? {// first chunk
+				// check first chunk type
+				if chunk[0] == 0 && chunk [3] == 100 { // media data
+					datagram_mode = true;
+					let tr_id = format!("{:04}", object.track);
+					let group = format!("{:010}", object.group);
+					let mut _obj = [tr_id.into(), ' '.to_string().into(), group.into(), ' '.to_string().into(), chunk.clone()].concat().into();
+					self.webtransport.send_datagram(_obj).await?; // send as datagram
+					log::error!("sent datagram chunk {:?}\n {:?}\n", chunk, chunk[3]);
+					log::error!("size {:?}\n", object.size);
+					}
+				else{ // catalog data
+					object // send header first
+						.encode(&mut stream, &self.control.ext)
+						.await
+						.map_err(|e| SessionError::Unknown(e.to_string()))?;
+					stream.write_all(&chunk).await?; // send catalog chunks in stream
+				}
 			}
+			while let Some(chunk) = fragment.chunk().await? {
+				if chunk[0] == 0 && chunk [3] == 100 { // media data
+					self.webtransport.send_datagram(chunk.clone()).await?; // send as datagram
+					log::error!("sent datagram chunk {:?}\n {:?}\n", chunk, chunk[3]);
+					}
+				else { // catalog data
+					stream.write_all(&chunk).await?; // send catalog chunks in stream
+				}
+			}
+
+			if datagram_mode { // send header last inside a reliable stream in datagram mode
+				object
+					.encode(&mut stream, &self.control.ext)
+					.await
+					.map_err(|e| SessionError::Unknown(e.to_string()))?;
+				// log::error!("sent datagram header {:?}", object);
+				let c: [u8; 4] =[0, 0, 0, 20];
+				stream.write_all(&c).await?;
+			}
+
 		}
 
 		Ok(())
