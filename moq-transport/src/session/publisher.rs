@@ -223,16 +223,19 @@ impl Publisher {
 				// log::error!("{:?} {:?}", chunk[0], chunk [3]);
 				// log::error!("{:?}", chunk);
 				if chunk.len() >= 3 && chunk[0] != 123 && format!("{:?}{:?}{:?}", chunk[1], chunk[2], chunk[3]) != format!("{:?}{:?}{:?}", 0, 0, 20) { // media data
+					chunk_counter += 1;
+					let mut slice_counter = 0;
 					for chunk_slice in chunk.chunks(512) {
-						chunk_counter += 1;
+						slice_counter += 1;
 						log::error!("{:?}\n", chunk_slice);
 						datagram_mode = true;
 						let tr_id = format!("{:04} ", object.track);
 						let group = format!("{:010} ", object.group);
 						let sequence = format!("{:010} ", chunk_counter);
-						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), chunk_slice].concat().into();
+						let slice_number = format!("{:04} ", slice_counter);
+						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), chunk_slice].concat().into();
 						self.webtransport.send_datagram(_obj).await?; // send as datagram
-						}
+					}
 				}
 				else { // catalog or init data
 					stream.write_all(&chunk).await?; // send catalog chunks in stream
@@ -240,14 +243,17 @@ impl Publisher {
 			}
 			while let Some(chunk) = fragment.chunk().await? {
 				if datagram_mode { // when in datagram mode, send remaining chunks in datagrams
+					chunk_counter += 1;
+					let mut slice_counter = 0;
 					for chunk_slice in chunk.chunks(512) {
-						chunk_counter += 1;
+						slice_counter += 1;
 						log::error!("{:?}\n", chunk_slice);
 						datagram_mode = true;
 						let tr_id = format!("{:04} ", object.track);
 						let group = format!("{:010} ", object.group);
 						let sequence = format!("{:010} ", chunk_counter);
-						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), chunk_slice].concat().into();
+						let slice_number = format!("{:04} ", slice_counter);
+						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), chunk_slice].concat().into();
 						self.webtransport.send_datagram(_obj).await?; // send as datagram
 					}
 				}
