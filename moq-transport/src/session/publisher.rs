@@ -190,7 +190,7 @@ impl Publisher {
 
 	async fn run_segment(&self, id: VarInt, segment: &mut segment::Subscriber) -> Result<(), SessionError> {
 		log::trace!("serving group: {:?}", segment);
-		log::error!("{:?}", self.tracks_num);
+		// log::error!("{:?}", self.tracks_num);
 
 		let mut stream = self.webtransport.open_uni().await?;
 		// Convert the u32 to a i32, since the Quinn set_priority is signed.
@@ -212,47 +212,57 @@ impl Publisher {
 				size: fragment.size.map(VarInt::try_from).transpose()?,
 				timestamp: segment.timestamp,
 			};
+			object // send header first
+				.encode(&mut stream, &self.control.ext)
+				.await
+				.map_err(|e| SessionError::Unknown(e.to_string()))?;
+			let mut chunk_counter = object.sequence.to_string().parse::<i32>().unwrap();
 			let mut datagram_mode = false;
-			let mut datagram_number = 0;
 			if let Some(chunk) = fragment.chunk().await? {// first chunk
 				// check first chunk type
-				if chunk[0] == 0 && chunk [3] == 100 { // media data
-					datagram_mode = true;
-					let tr_id = format!("{:04}", object.track);
-					let group = format!("{:010}", object.group);
-					let mut _obj = [tr_id.into(), ' '.to_string().into(), group.into(), ' '.to_string().into(), chunk.clone()].concat().into();
-					self.webtransport.send_datagram(_obj).await?; // send as datagram
-					log::error!("sent datagram chunk {:?}\n {:?}\n", chunk, chunk[3]);
-					log::error!("size {:?}\n", object.size);
-					}
-				else{ // catalog data
-					object // send header first
-						.encode(&mut stream, &self.control.ext)
-						.await
-						.map_err(|e| SessionError::Unknown(e.to_string()))?;
+				// log::error!("{:?} {:?}", chunk[0], chunk [3]);
+				// log::error!("{:?}", chunk);
+				if chunk.len() >= 3 && chunk[0] != 123 && format!("{:?}{:?}{:?}", chunk[1], chunk[2], chunk[3]) != format!("{:?}{:?}{:?}", 0, 0, 20) { // media data
+					for chunk_slice in chunk.chunks(512) {
+						chunk_counter += 1;
+						log::error!("{:?}\n", chunk_slice);
+						datagram_mode = true;
+						let tr_id = format!("{:04} ", object.track);
+						let group = format!("{:010} ", object.group);
+						let sequence = format!("{:010} ", chunk_counter);
+						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), chunk_slice].concat().into();
+						self.webtransport.send_datagram(_obj).await?; // send as datagram
+						}
+				}
+				else { // catalog or init data
 					stream.write_all(&chunk).await?; // send catalog chunks in stream
 				}
 			}
 			while let Some(chunk) = fragment.chunk().await? {
-				if chunk[0] == 0 && chunk [3] == 100 { // media data
-					self.webtransport.send_datagram(chunk.clone()).await?; // send as datagram
-					log::error!("sent datagram chunk {:?}\n {:?}\n", chunk, chunk[3]);
+				if datagram_mode { // when in datagram mode, send remaining chunks in datagrams
+					for chunk_slice in chunk.chunks(512) {
+						chunk_counter += 1;
+						log::error!("{:?}\n", chunk_slice);
+						datagram_mode = true;
+						let tr_id = format!("{:04} ", object.track);
+						let group = format!("{:010} ", object.group);
+						let sequence = format!("{:010} ", chunk_counter);
+						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), chunk_slice].concat().into();
+						self.webtransport.send_datagram(_obj).await?; // send as datagram
 					}
-				else { // catalog data
-					stream.write_all(&chunk).await?; // send catalog chunks in stream
+				}
+				else { // catalog and init data
+					stream.write_all(&chunk).await?; // send chunks in stream
 				}
 			}
 
-			if datagram_mode { // send header last inside a reliable stream in datagram mode
-				object
-					.encode(&mut stream, &self.control.ext)
-					.await
-					.map_err(|e| SessionError::Unknown(e.to_string()))?;
-				// log::error!("sent datagram header {:?}", object);
-				let c: [u8; 4] =[0, 0, 0, 20];
-				stream.write_all(&c).await?;
+			if datagram_mode { // send end fragment inside a reliable stream when in datagram mode
+				let tr_id = format!("{:04} ", object.track);
+				let group = format!("{:010} ", object.group);
+				let end = "end";
+				let mut _obj = [tr_id.as_bytes(), group.as_bytes(), end.as_bytes()].concat().into();
+				self.webtransport.send_datagram(_obj).await?; // send as datagram
 			}
-
 		}
 
 		Ok(())
