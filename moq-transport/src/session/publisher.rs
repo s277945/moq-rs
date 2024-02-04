@@ -222,7 +222,6 @@ impl Publisher {
 				// check first chunk type
 				// log::error!("{:?} {:?}", chunk[0], chunk [3]);
 				// log::error!("{:?}", chunk);
-				if chunk.len() >= 3 && chunk[0] != 123 && format!("{:?}{:?}{:?}", chunk[1], chunk[2], chunk[3]) != format!("{:?}{:?}{:?}", 0, 0, 20) { // media data
 					chunk_counter += 1;
 					datagram_mode = true;
 					let mut slice_counter = 0;
@@ -239,10 +238,6 @@ impl Publisher {
 					let end = "end_chunk";
 					let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), end.as_bytes()].concat().into();
 					self.webtransport.send_datagram(_obj).await?; // send as datagram
-				}
-				else { // catalog or init data
-					stream.write_all(&chunk).await?; // send catalog chunks in stream
-				}
 			}
 			while let Some(chunk) = fragment.chunk().await? {
 				if datagram_mode { // when in datagram mode, send remaining chunks in datagrams
