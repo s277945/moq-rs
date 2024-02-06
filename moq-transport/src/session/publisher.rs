@@ -228,15 +228,17 @@ impl Publisher {
 					let tr_id = format!("{:04} ", object.track);
 					let group = format!("{:010} ", object.group);
 					let sequence = format!("{:010} ", chunk_counter);
+					let len = format!("{:010} ", chunk.len());
 					for chunk_slice in chunk.chunks(1024) {
+						let slice_len = format!("{:010} ", chunk_slice.len());
 						slice_counter += 1;
 						log::error!("{:?}\n", chunk_slice);
 						let slice_number = format!("{:04} ", slice_counter);
-						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), chunk_slice].concat().into();
+						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), slice_len.as_bytes(), chunk_slice].concat().into();
 						self.webtransport.send_datagram(_obj).await?; // send as datagram
 					}
 					let end = "end_chunk";
-					let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), end.as_bytes()].concat().into();
+					let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), len.as_bytes(), end.as_bytes()].concat().into();
 					self.webtransport.send_datagram(_obj).await?; // send as datagram
 			}
 			while let Some(chunk) = fragment.chunk().await? {
@@ -246,16 +248,17 @@ impl Publisher {
 					let tr_id = format!("{:04} ", object.track);
 					let group = format!("{:010} ", object.group);
 					let sequence = format!("{:010} ", chunk_counter);
+					let len = format!("{:010} ", chunk.len());
 					for chunk_slice in chunk.chunks(1024) {
+						let slice_len = format!("{:010} ", chunk_slice.len());
 						slice_counter += 1;
 						log::error!("{:?}\n", chunk_slice);
-						datagram_mode = true;
 						let slice_number = format!("{:04} ", slice_counter);
-						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), chunk_slice].concat().into();
+						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), slice_len.as_bytes(), chunk_slice].concat().into();
 						self.webtransport.send_datagram(_obj).await?; // send as datagram
 					}
 					let end = "end_chunk";
-					let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), end.as_bytes()].concat().into();
+					let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), len.as_bytes(), end.as_bytes()].concat().into();
 					self.webtransport.send_datagram(_obj).await?; // send as datagram
 				}
 				else { // catalog and init data
