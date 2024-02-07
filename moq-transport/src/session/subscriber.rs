@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use webtransport_quinn::{RecvStream, Session};
+use deadqueue::unlimited::Queue;
 
+use core::slice;
 use std::{
 	collections::HashMap,
 	sync::{atomic, Arc, Mutex},
@@ -14,6 +16,20 @@ use crate::{
 	session::{Control, SessionError},
 	VarInt,
 };
+
+#[derive(Debug)]
+struct Datagram {
+	number: i32,
+	data: Bytes
+}
+
+#[derive(Debug)]
+struct Group {
+	current_chunk: i32,
+	chunks: HashMap<i32, Vec<Datagram>>,
+	ready_chunks: Queue<Bytes>,
+	done: bool
+}
 
 /// Receives broadcasts over the network, automatically handling subscriptions and caching.
 // TODO Clone specific fields when a task actually needs it.
@@ -33,6 +49,8 @@ pub struct Subscriber {
 
 	// All unknown subscribes comes here.
 	source: broadcast::Publisher,
+
+	track_map: Arc<Mutex<HashMap<i32, HashMap<i32, Group>>>>,
 }
 
 impl Subscriber {
@@ -43,6 +61,7 @@ impl Subscriber {
 			next: Default::default(),
 			control,
 			source,
+			track_map: Default::default(),
 		}
 	}
 
@@ -107,29 +126,64 @@ impl Subscriber {
 						let sequence_num = str_data[2].parse::<i32>().unwrap_or(-1);
 						let slice_num = str_data[3].parse::<i32>().unwrap_or(-1);
 						let slice_len = str_data[4].parse::<i32>().unwrap_or(-1);
+
 						let head = format!("{:?} {:?} {:?} {:?} {:?} ", track_id, group_id, sequence_num, slice_num, slice_len);
 						log::error!("{:?} \n", head);
+
 						let offset = head.len();
 						let data = datagram.slice(offset..);
 						log::error!("{:?} \n", data);
-						// [42..str_data[0..4].concat().len()];
 
-						// = Number(splitData.shift()).toString() // decode track id
-						// const groupId = Number(splitData.shift()) // decode group id number
-						// const sequenceNum = Number(splitData.shift()) // decode object sequence number
-						// const sliceNum = Number(splitData.shift()) // decode slice number
-						// const sliceLen = Number(splitData.shift()) // decode slice number
-						// const data = res.subarray(43, res.length) // extract data
+						if track_id != -1 && group_id != -1 && sequence_num !=-1 && slice_num != -1 && slice_len != -1 { // received valid header data
+							let mut tracks = self.track_map.lock().unwrap(); // get shared tracks map
+
+							if !tracks.contains_key(&track_id) {
+								let value = HashMap::new();
+								tracks.insert(track_id.clone(), value); // add track if not already present
+							}
+							let track = tracks.get_mut(&track_id).unwrap(); // get track
+
+							if !track.contains_key(&group_id) {
+								let value = Group {
+									current_chunk: 1,
+									chunks: HashMap::new(),
+									ready_chunks: Queue::new(),
+									done: false
+								};
+								track.insert(group_id.clone(), value); // add group if not already present
+							}
+							let group = track.get_mut(&group_id).unwrap(); // get group
+
+							if !group.chunks.contains_key(&sequence_num) {
+								let value = Vec::new();
+								group.chunks.insert(sequence_num.clone(), value); // add chunk if not already present
+							}
+							let datagrams = group.chunks.get_mut(&sequence_num).unwrap(); // get chunk datagrams vector
+
+							datagrams.push(Datagram { number: slice_num, data: data }); // add datagrams to chunk vector
+
+							drop(tracks) // release mutex
+
+						}
 					}
 					else if val.len() == 5 {
+						let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
+						let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
+						let sequence_num = str_data[2].parse::<i32>().unwrap_or(-1);
+						let slice_num = str_data[3].parse::<i32>().unwrap_or(-1);
+						let msg = str_data[4].to_string();
 
+
+						if track_id != -1 && group_id != -1 && sequence_num !=-1 && slice_num != -1 && msg == "end_chunk" { // received valid header data
+
+						}
 					}
 					else {
 
 					}
 				},
 				Err(err) => {
-					// Do something with the error if you want
+					log::error!("{:?}\n", "Error opening new datagram");
 				}
 			}
 		}
@@ -176,6 +230,31 @@ impl Subscriber {
 		// Create the first fragment
 		let mut fragment = segment.push_fragment(object.sequence, object.size.map(usize::from))?;
 		let mut remain = object.size.map(usize::from);
+
+		let track_id = object.track.to_string().parse::<i32>().unwrap_or(-1);
+		let group_id = object.group.to_string().parse::<i32>().unwrap_or(-1);
+		if track_id != -1 && group_id != -1 { // received valid header data
+			let mut tracks = self.track_map.lock().unwrap(); // get shared tracks map
+
+			if !tracks.contains_key(&track_id) {
+				let value = HashMap::new();
+				tracks.insert(track_id.clone(), value); // add track if not already present
+			}
+			let track = tracks.get_mut(&track_id).unwrap(); // get track
+
+			if !track.contains_key(&group_id) {
+				let value = Group {
+					current_chunk: 1,
+					chunks: HashMap::new(),
+					ready_chunks: Queue::new(),
+					done: false
+				};
+				track.insert(group_id.clone(), value); // add group if not already present
+			}
+
+			drop(tracks) // release mutex
+
+		}
 
 		loop {
 			if let Some(0) = remain {
