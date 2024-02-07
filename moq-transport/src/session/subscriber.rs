@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use webtransport_quinn::{RecvStream, Session};
 
 use std::{
@@ -49,12 +50,14 @@ impl Subscriber {
 		let inbound = self.clone().run_inbound();
 		let streams = self.clone().run_streams();
 		let source = self.clone().run_source();
+		let datagrams = self.clone().run_datagrams();
 
 		// Return the first error.
 		tokio::select! {
 			res = inbound => res,
 			res = streams => res,
 			res = source => res,
+			res = datagrams => Ok(res),
 		}
 	}
 
@@ -88,6 +91,48 @@ impl Subscriber {
 		subscribe.close(err)?;
 
 		Ok(())
+	}
+
+	async fn run_datagrams(self) -> () {
+		loop {
+			let datagram = self.webtransport.read_datagram().await.expect("Error reading new datagrams");
+			log::error!("{:?} \n", datagram);
+			let result = std::str::from_utf8(datagram.as_ref());
+			match result {
+				Ok(val) => {
+					let str_data = val.split(" ").collect::<Vec<&str>>();
+					if str_data.len() > 5 {
+						let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
+						let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
+						let sequence_num = str_data[2].parse::<i32>().unwrap_or(-1);
+						let slice_num = str_data[3].parse::<i32>().unwrap_or(-1);
+						let slice_len = str_data[4].parse::<i32>().unwrap_or(-1);
+						let head = format!("{:?} {:?} {:?} {:?} {:?} ", track_id, group_id, sequence_num, slice_num, slice_len);
+						log::error!("{:?} \n", head);
+						let offset = head.len();
+						let data = datagram.slice(offset..);
+						log::error!("{:?} \n", data);
+						// [42..str_data[0..4].concat().len()];
+
+						// = Number(splitData.shift()).toString() // decode track id
+						// const groupId = Number(splitData.shift()) // decode group id number
+						// const sequenceNum = Number(splitData.shift()) // decode object sequence number
+						// const sliceNum = Number(splitData.shift()) // decode slice number
+						// const sliceLen = Number(splitData.shift()) // decode slice number
+						// const data = res.subarray(43, res.length) // extract data
+					}
+					else if val.len() == 5 {
+
+					}
+					else {
+
+					}
+				},
+				Err(err) => {
+					// Do something with the error if you want
+				}
+			}
+		}
 	}
 
 	async fn run_streams(self) -> Result<(), SessionError> {
