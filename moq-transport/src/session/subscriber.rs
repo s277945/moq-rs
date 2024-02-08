@@ -1,11 +1,10 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use webtransport_quinn::{RecvStream, Session};
-use deadqueue::unlimited::Queue;
+use deadqueue::unlimited::Queue as Queue;
 
 use core::slice;
 use std::{
-	collections::HashMap,
-	sync::{atomic, Arc, Mutex},
+	borrow::Borrow, collections::HashMap, sync::{atomic, Arc, Mutex}
 };
 
 use crate::{
@@ -160,10 +159,9 @@ impl Subscriber {
 							}
 							let datagrams = group.chunks.get_mut(&sequence_num).unwrap(); // get chunk datagrams vector
 
-							datagrams.push(Datagram { number: slice_num, data: data }); // add datagrams to chunk vector
+							datagrams.push(Datagram { number: slice_num, data: data.clone() }); // add datagrams to chunk vector
 
-							drop(tracks) // release mutex
-
+							drop(tracks); // release mutex
 						}
 					}
 					else if val.len() == 5 {
@@ -175,6 +173,27 @@ impl Subscriber {
 
 
 						if track_id != -1 && group_id != -1 && sequence_num !=-1 && slice_num != -1 && msg == "end_chunk" { // received valid header data
+							let mut tracks = self.track_map.lock().unwrap(); // get shared tracks map
+
+							match tracks.get_mut(&track_id) {
+								Some(track) => { match track.get_mut(&group_id) {
+										Some(group) => { // group found
+											if group.current_chunk <= sequence_num { match &mut group.chunks.get_mut(&sequence_num) {
+													Some(chunk) => { // get corresponding chunk datagrams
+														let mut out_chunk: Vec<u8> = Vec::new();
+														chunk.sort_by(|a, b| a.number.cmp(&b.number)); // sort slices by datagram number
+														for slice in chunk.iter() {
+															for byte in slice.data.to_vec() {
+																out_chunk.push(byte.clone())
+															}
+														}
+														let ready_chunk: Bytes = Bytes::from(out_chunk); // convert output vector to byte array
+														group.ready_chunks.push(ready_chunk) // add chunk to queue of ready chunks
+													} None => {}}}} None => {log::error!("Requested group not found: {:?}\n", group_id);}
+									}} None => {log::error!("Requested track not found: {:?}\n", track_id);}
+							}
+
+							drop(tracks); // release mutex
 
 						}
 					}
