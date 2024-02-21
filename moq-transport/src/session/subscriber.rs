@@ -1,12 +1,11 @@
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use tokio::time::timeout;
 use webtransport_quinn::{RecvStream, Session};
 use async_channel::{unbounded, Sender, Receiver};
 use futures::lock::Mutex as async_Mutex;
 
-use core::slice;
 use std::{
-	borrow::Borrow, collections::HashMap, sync::{atomic, Arc, Mutex}, time::Duration
+	collections::HashMap, sync::{atomic, Arc, Mutex}, time::Duration
 };
 
 use crate::{
@@ -35,7 +34,6 @@ struct Group {
 	latest_chunk: i32,
 	chunks: HashMap<i32, Vec<Datagram>>,
 	ready_chunks: Channel<Bytes>,
-	done: bool,
 }
 
 /// Receives broadcasts over the network, automatically handling subscriptions and caching.
@@ -146,6 +144,7 @@ impl Subscriber {
 									log::error!("{:?} \n", data);
 
 									let mut tracks = self.track_map.lock().await; // get shared tracks map
+									// log::error!("Acquired tracks mutex");
 
 									if !tracks.contains_key(&track_id) {
 										let value = HashMap::new();
@@ -153,40 +152,49 @@ impl Subscriber {
 									}
 									let track = tracks.get_mut(&track_id).unwrap(); // get track
 
+									// log::error!("Track {:?}", track);
+
 									if !track.contains_key(&group_id) {
 										let (s, r) = unbounded::<Bytes>();
 										let value = Group {
 											latest_chunk: 1,
 											chunks: HashMap::new(),
 											ready_chunks: Channel::<Bytes> { receiver: r, sender: s },
-											done: false
 										};
 										track.insert(group_id.clone(), value); // add group if not already present
 									}
 									let group = track.get_mut(&group_id).unwrap(); // get group
+									// log::error!("Group {:?}", group);
 
 									if !group.chunks.contains_key(&sequence_num) {
 										let value = Vec::new();
 										group.chunks.insert(sequence_num.clone(), value); // add chunk if not already present
 									}
 									let datagrams = group.chunks.get_mut(&sequence_num).unwrap(); // get chunk datagrams vector
+									// log::error!("Datagrams {:?}", datagrams);
 
 									datagrams.push(Datagram { number: slice_num, data: data.clone() }); // add datagrams to chunk vector
+									// log::error!("Datagrams {:?}", datagrams);
+									// log::error!("Group {:?}", group);
+									drop(tracks);
 								}
 							}
-							else if val.len() == 5 {
+							else if str_data.len() == 5 {
 								let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
 								let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
 								let sequence_num = str_data[2].parse::<i32>().unwrap_or(-1);
 								let slice_num = str_data[3].parse::<i32>().unwrap_or(-1);
 								let msg = str_data[4].to_string();
-
+								log::error!("{:?}|{:?}|{:?}|{:?}|{:?}|\n", track_id, group_id, sequence_num, slice_num, msg);
 
 								if track_id != -1 && group_id != -1 && sequence_num !=-1 && slice_num != -1 && msg == "end_chunk" { // received valid header data
 									let mut tracks = self.track_map.lock().await; // get shared tracks map
+									// log::error!("Acquired tracks mutex");
+
 
 									match tracks.get_mut(&track_id) {
-										Some(track) => { match track.get_mut(&group_id) {
+										Some(track) => {
+											log::error!("Track {:?}", track); match track.get_mut(&group_id) {
 												Some(group) => { // group found
 													if group.latest_chunk <= sequence_num { match &mut group.chunks.get_mut(&sequence_num) { // discard late datagrams
 															Some(chunk) => { // get corresponding chunk datagrams
@@ -200,7 +208,8 @@ impl Subscriber {
 																let ready_chunk: Bytes = Bytes::from(out_chunk); // convert output vector to byte array
 																let sent = group.ready_chunks.sender.try_send(ready_chunk);
 																match sent { // add chunk to queue of ready chunks
-																	Ok(..) => { group.latest_chunk = sequence_num; }, // update latest chunk number
+																	Ok(..) => { group.latest_chunk = sequence_num;
+																				log::error!("{:?} \n", group.latest_chunk);}, // update latest chunk number
 																	Err(error) => {log::error!("Error sending slice to group channel: {:?}\n", error);}
 																}
 															} None => {log::error!("Requested chunk not found: {:?}\n", sequence_num);}}}
@@ -212,7 +221,7 @@ impl Subscriber {
 
 								}
 							}
-							else if val.len() == 3 {
+							else if str_data.len() == 3 {
 								let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
 								let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
 								let msg = str_data[2].to_string();
@@ -282,7 +291,7 @@ impl Subscriber {
 
 		log::trace!("received segment: {:?}", segment);
 
-		self.get_unreliable_fragment(&stream, &mut segment, &object).await?;
+		self.get_unreliable_fragment(&mut segment, &object).await?;
 
 		loop {
 				// Decode the next object from the stream.
@@ -307,13 +316,13 @@ impl Subscriber {
 
 				object = next;
 
-				self.get_unreliable_fragment(&stream, &mut segment, & object).await?;
+				self.get_unreliable_fragment(&mut segment, & object).await?;
 		};
 
 		Ok(())
 	}
 
-	async fn get_unreliable_fragment(&self,stream: &RecvStream, segment: &mut segment::Publisher, object: & message::Object) -> Result<(), SessionError> {
+	async fn get_unreliable_fragment(&self , segment: &mut segment::Publisher, object: & message::Object) -> Result<(), SessionError> {
 		// Create the first fragment
 		let mut fragment = segment.push_fragment(object.sequence, object.size.map(usize::from))?;
 		log::trace!("next fragment: {:?}", fragment);
@@ -337,7 +346,6 @@ impl Subscriber {
 					latest_chunk: 1,
 					chunks: HashMap::new(),
 					ready_chunks: Channel::<Bytes> { receiver: r, sender: s },
-					done: false
 				};
 				track.insert(group_id.clone(), value); // add group if not already present
 			}
@@ -373,7 +381,7 @@ impl Subscriber {
 								}
 							},
 							Err(..) => {
-								log::error!("Timout for group, {:?}", group_id);
+								log::error!("Timout for group {:?} of track {:?}\n", group_id, track_id);
 								break;
 							}
 						}
