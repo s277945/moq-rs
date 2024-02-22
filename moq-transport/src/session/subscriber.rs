@@ -31,7 +31,6 @@ struct Channel<T> {
 
 #[derive(Debug)]
 struct Group {
-	latest_chunk: i32,
 	chunks: HashMap<i32, Vec<Datagram>>,
 	ready_chunks: Channel<Bytes>,
 }
@@ -123,126 +122,118 @@ impl Subscriber {
 			match read_data {
 				Ok(datagram) => {
 					log::error!("{:?} \n", datagram);
-					let result = std::str::from_utf8(datagram.as_ref());
-					match result {
-						Ok(val) => {
-							let str_data = val.split(" ").collect::<Vec<&str>>();
+					let val = unsafe { std::str::from_utf8_unchecked(datagram.as_ref()) };
+					let str_data = val.split(" ").collect::<Vec<&str>>();
 
-							if str_data.len() > 5 {
-								let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
-								let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
-								let sequence_num = str_data[2].parse::<i32>().unwrap_or(-1);
-								let slice_num = str_data[3].parse::<i32>().unwrap_or(-1);
-								let slice_len = str_data[4].parse::<i32>().unwrap_or(-1);
+					if str_data.len() > 5 {
+						let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
+						let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
+						let sequence_num = str_data[2].parse::<i32>().unwrap_or(-1);
+						let slice_num = str_data[3].parse::<i32>().unwrap_or(-1);
+						let slice_len = str_data[4].parse::<i32>().unwrap_or(-1);
 
-								if track_id != -1 && group_id != -1 && sequence_num !=-1 && slice_num != -1 && slice_len != -1 { // received valid header data
-									let head = format!("{:?} {:?} {:?} {:?} {:?} ", track_id, group_id, sequence_num, slice_num, slice_len); // header data string
-									log::error!("{:?} \n", head);
+						if track_id != -1 && group_id != -1 && sequence_num !=-1 && slice_num != -1 && slice_len != -1 { // received valid header data
+							let head = format!("{:?} {:?} {:?} {:?} {:?} ", track_id, group_id, sequence_num, slice_num, slice_len); // header data string
+							log::error!("{:?} \n", head);
 
-									let offset = head.len(); // get header end offset
-									let data = datagram.slice(offset..); // slice data from datagram
-									log::error!("{:?} \n", data);
+							let offset = head.len(); // get header end offset
+							let data = datagram.slice(offset..); // slice data from datagram
+							log::error!("{:?} \n", data);
 
-									let mut tracks = self.track_map.lock().await; // get shared tracks map
-									// log::error!("Acquired tracks mutex");
+							let mut tracks = self.track_map.lock().await; // get shared tracks map
+							// log::error!("Acquired tracks mutex");
 
-									if !tracks.contains_key(&track_id) {
-										let value = HashMap::new();
-										tracks.insert(track_id.clone(), value); // add track if not already present
-									}
-									let track = tracks.get_mut(&track_id).unwrap(); // get track
+							if !tracks.contains_key(&track_id) {
+								let value = HashMap::new();
+								tracks.insert(track_id.clone(), value); // add track if not already present
+							}
+							let track = tracks.get_mut(&track_id).unwrap(); // get track
 
+							// log::error!("Track {:?}", track);
+
+							if !track.contains_key(&group_id) {
+								let (s, r) = unbounded::<Bytes>();
+								let value = Group {
+									chunks: HashMap::new(),
+									ready_chunks: Channel::<Bytes> { receiver: r, sender: s },
+								};
+								track.insert(group_id.clone(), value); // add group if not already present
+							}
+							let group = track.get_mut(&group_id).unwrap(); // get group
+							// log::error!("Group {:?}", group);
+
+							if !group.chunks.contains_key(&sequence_num) {
+								let value = Vec::new();
+								group.chunks.insert(sequence_num.clone(), value); // add chunk if not already present
+							}
+							let datagrams = group.chunks.get_mut(&sequence_num).unwrap(); // get chunk datagrams vector
+							// log::error!("Datagrams {:?}", datagrams);
+
+							datagrams.push(Datagram { number: slice_num, data: data.clone() }); // add datagrams to chunk vector
+							// log::error!("Datagrams {:?}", datagrams);
+							// log::error!("Group {:?}", group);
+							drop(tracks);
+						}
+					}
+					else if str_data.len() == 5 {
+						let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
+						let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
+						let sequence_num = str_data[2].parse::<i32>().unwrap_or(-1);
+						let slice_num = str_data[3].parse::<i32>().unwrap_or(-1);
+						let msg = str_data[4].to_string();
+						log::error!("{:?}|{:?}|{:?}|{:?}|{:?}|\n", track_id, group_id, sequence_num, slice_num, msg);
+
+						if track_id != -1 && group_id != -1 && sequence_num !=-1 && slice_num != -1 && msg == "end_chunk" { // received valid header data
+							let mut tracks = self.track_map.lock().await; // get shared tracks map
+							// log::error!("Acquired tracks mutex");
+
+
+							match tracks.get_mut(&track_id) {
+								Some(track) => {
 									// log::error!("Track {:?}", track);
-
-									if !track.contains_key(&group_id) {
-										let (s, r) = unbounded::<Bytes>();
-										let value = Group {
-											latest_chunk: 1,
-											chunks: HashMap::new(),
-											ready_chunks: Channel::<Bytes> { receiver: r, sender: s },
-										};
-										track.insert(group_id.clone(), value); // add group if not already present
-									}
-									let group = track.get_mut(&group_id).unwrap(); // get group
-									// log::error!("Group {:?}", group);
-
-									if !group.chunks.contains_key(&sequence_num) {
-										let value = Vec::new();
-										group.chunks.insert(sequence_num.clone(), value); // add chunk if not already present
-									}
-									let datagrams = group.chunks.get_mut(&sequence_num).unwrap(); // get chunk datagrams vector
-									// log::error!("Datagrams {:?}", datagrams);
-
-									datagrams.push(Datagram { number: slice_num, data: data.clone() }); // add datagrams to chunk vector
-									// log::error!("Datagrams {:?}", datagrams);
-									// log::error!("Group {:?}", group);
-									drop(tracks);
-								}
+									match track.get_mut(&group_id) {
+										Some(group) => { // group found
+											match &mut group.chunks.get_mut(&sequence_num) { // discard late datagrams
+													Some(chunk) => { // get corresponding chunk datagrams
+														let mut out_chunk: Vec<u8> = Vec::new();
+														chunk.sort_by(|a, b| a.number.cmp(&b.number)); // sort slices by datagram number
+														for slice in chunk.iter() {
+															for byte in slice.data.to_vec() {
+																out_chunk.push(byte.clone())
+															}
+														}
+														let ready_chunk: Bytes = Bytes::from(out_chunk); // convert output vector to byte array
+														let sent = group.ready_chunks.sender.try_send(ready_chunk);
+														match sent { // add chunk to queue of ready chunks
+															Ok(..) => { },
+															Err(error) => {log::error!("Error sending slice to group channel: {:?}\n", error);}
+														}
+													} None => {log::error!("Requested chunk not found: {:?}\n", sequence_num);}}
+										} None => {log::error!("Requested group not found: {:?}\n", group_id);}
+								}} None => {log::error!("Requested track not found: {:?}\n", track_id);}
 							}
-							else if str_data.len() == 5 {
-								let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
-								let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
-								let sequence_num = str_data[2].parse::<i32>().unwrap_or(-1);
-								let slice_num = str_data[3].parse::<i32>().unwrap_or(-1);
-								let msg = str_data[4].to_string();
-								log::error!("{:?}|{:?}|{:?}|{:?}|{:?}|\n", track_id, group_id, sequence_num, slice_num, msg);
 
-								if track_id != -1 && group_id != -1 && sequence_num !=-1 && slice_num != -1 && msg == "end_chunk" { // received valid header data
-									let mut tracks = self.track_map.lock().await; // get shared tracks map
-									// log::error!("Acquired tracks mutex");
+							drop(tracks); // release mutex
 
+						}
+					}
+					else if str_data.len() == 3 {
+						let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
+						let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
+						let msg = str_data[2].to_string();
+						if track_id != -1 && group_id != -1 && msg == "end" {
+							let mut tracks = self.track_map.lock().await; // get shared tracks map
 
-									match tracks.get_mut(&track_id) {
-										Some(track) => {
-											log::error!("Track {:?}", track); match track.get_mut(&group_id) {
-												Some(group) => { // group found
-													if group.latest_chunk <= sequence_num { match &mut group.chunks.get_mut(&sequence_num) { // discard late datagrams
-															Some(chunk) => { // get corresponding chunk datagrams
-																let mut out_chunk: Vec<u8> = Vec::new();
-																chunk.sort_by(|a, b| a.number.cmp(&b.number)); // sort slices by datagram number
-																for slice in chunk.iter() {
-																	for byte in slice.data.to_vec() {
-																		out_chunk.push(byte.clone())
-																	}
-																}
-																let ready_chunk: Bytes = Bytes::from(out_chunk); // convert output vector to byte array
-																let sent = group.ready_chunks.sender.try_send(ready_chunk);
-																match sent { // add chunk to queue of ready chunks
-																	Ok(..) => { group.latest_chunk = sequence_num;
-																				log::error!("{:?} \n", group.latest_chunk);}, // update latest chunk number
-																	Err(error) => {log::error!("Error sending slice to group channel: {:?}\n", error);}
-																}
-															} None => {log::error!("Requested chunk not found: {:?}\n", sequence_num);}}}
-												} None => {log::error!("Requested group not found: {:?}\n", group_id);}
-										}} None => {log::error!("Requested track not found: {:?}\n", track_id);}
-									}
-
-									drop(tracks); // release mutex
-
-								}
+							match tracks.get_mut(&track_id) {
+								Some(track) => { match track.get_mut(&group_id) { // track found
+									Some(group) => { // group found
+										group.ready_chunks.sender.close(); // close channel on sender side
+									} None => {log::error!("Requested group not found: {:?}\n", group_id);}
+								}} None => {log::error!("Requested track not found: {:?}\n", track_id);}
 							}
-							else if str_data.len() == 3 {
-								let track_id = str_data[0].parse::<i32>().unwrap_or(-1);
-								let group_id = str_data[1].parse::<i32>().unwrap_or(-1);
-								let msg = str_data[2].to_string();
-								if track_id != -1 && group_id != -1 && msg == "end" {
-									let mut tracks = self.track_map.lock().await; // get shared tracks map
 
-									match tracks.get_mut(&track_id) {
-										Some(track) => { match track.get_mut(&group_id) { // track found
-											Some(group) => { // group found
-												group.ready_chunks.sender.close(); // close channel on sender side
-											} None => {log::error!("Requested group not found: {:?}\n", group_id);}
-										}} None => {log::error!("Requested track not found: {:?}\n", track_id);}
-									}
+							drop(tracks); // release mutex
 
-									drop(tracks); // release mutex
-
-								}
-							}
-						},
-						Err(..) => {
-							log::error!("{:?}\n", "Error opening new datagram");
 						}
 					}
 				}
@@ -343,7 +334,6 @@ impl Subscriber {
 				let (s, r) = unbounded::<Bytes>();
 				rcv = Some(r.clone());
 				let value = Group {
-					latest_chunk: 1,
 					chunks: HashMap::new(),
 					ready_chunks: Channel::<Bytes> { receiver: r, sender: s },
 				};
