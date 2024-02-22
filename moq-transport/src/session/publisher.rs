@@ -220,7 +220,7 @@ impl Publisher {
 			if let Some(chunk) = fragment.chunk().await? {// first chunk
 				// check first chunk type
 				// log::error!("{:?} {:?}", chunk[0], chunk [3]);
-				log::error!("{:?}", chunk);
+				// log::error!("{:?}", chunk);
 					chunk_counter += 1;
 					datagram_mode = true;
 					let mut slice_counter = 0;
@@ -231,7 +231,7 @@ impl Publisher {
 					for chunk_slice in chunk.chunks(1024) {
 						let slice_len = format!("{:010} ", chunk_slice.len());
 						slice_counter += 1;
-						log::error!("{:?}\n", chunk_slice);
+						// log::error!("{:?}\n", chunk_slice);
 						let slice_number = format!("{:04} ", slice_counter);
 						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), slice_len.as_bytes(), chunk_slice].concat().into();
 						self.webtransport.send_datagram(_obj).await?; // send as datagram
@@ -251,7 +251,7 @@ impl Publisher {
 					for chunk_slice in chunk.chunks(1024) {
 						let slice_len = format!("{:010} ", chunk_slice.len());
 						slice_counter += 1;
-						log::error!("{:?}\n", chunk_slice);
+						// log::error!("{:?}\n", chunk_slice);
 						let slice_number = format!("{:04} ", slice_counter);
 						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), slice_len.as_bytes(), chunk_slice].concat().into();
 						self.webtransport.send_datagram(_obj).await?; // send as datagram
