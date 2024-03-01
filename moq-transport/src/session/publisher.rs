@@ -220,19 +220,19 @@ impl Publisher {
 			if let Some(chunk) = fragment.chunk().await? {// first chunk
 				// check first chunk type
 				// log::error!("{:?} {:?}", chunk[0], chunk [3]);
-				// log::error!("{:?}", chunk);
+				log::error!("{:?}", chunk);
 					chunk_counter += 1;
 					datagram_mode = true;
 					let mut slice_counter = 0;
-					let tr_id = format!("{:04} ", object.track);
-					let group = format!("{:010} ", object.group);
-					let sequence = format!("{:010} ", chunk_counter);
-					let len = format!("{:010} ", chunk.len());
+					let tr_id = format!("{:?} ", object.track);
+					let group = format!("{:?} ", object.group);
+					let sequence = format!("{:?} ", chunk_counter);
+					let len = format!("{:?} ", chunk.len());
 					for chunk_slice in chunk.chunks(1024) {
-						let slice_len = format!("{:010} ", chunk_slice.len());
+						let slice_len = format!("{:?} ", chunk_slice.len());
 						slice_counter += 1;
 						// log::error!("{:?}\n", chunk_slice);
-						let slice_number = format!("{:04} ", slice_counter);
+						let slice_number = format!("{:?} ", slice_counter);
 						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), slice_len.as_bytes(), chunk_slice].concat().into();
 						self.webtransport.send_datagram(_obj).await?; // send as datagram
 					}
@@ -244,15 +244,15 @@ impl Publisher {
 				if datagram_mode { // when in datagram mode, send remaining chunks in datagrams
 					chunk_counter += 1;
 					let mut slice_counter = 0;
-					let tr_id = format!("{:04} ", object.track);
-					let group = format!("{:010} ", object.group);
-					let sequence = format!("{:010} ", chunk_counter);
-					let len = format!("{:010} ", chunk.len());
+					let tr_id = format!("{:?} ", object.track);
+					let group = format!("{:?} ", object.group);
+					let sequence = format!("{:?} ", chunk_counter);
+					let len = format!("{:?} ", chunk.len());
 					for chunk_slice in chunk.chunks(1024) {
-						let slice_len = format!("{:010} ", chunk_slice.len());
+						let slice_len = format!("{:?} ", chunk_slice.len());
 						slice_counter += 1;
 						// log::error!("{:?}\n", chunk_slice);
-						let slice_number = format!("{:04} ", slice_counter);
+						let slice_number = format!("{:?} ", slice_counter);
 						let mut _obj = [tr_id.as_bytes(), group.as_bytes(), sequence.as_bytes(), slice_number.as_bytes(), slice_len.as_bytes(), chunk_slice].concat().into();
 						self.webtransport.send_datagram(_obj).await?; // send as datagram
 					}
@@ -266,8 +266,8 @@ impl Publisher {
 			}
 
 			if datagram_mode { // send end fragment inside a reliable stream when in datagram mode
-				let tr_id = format!("{:04} ", object.track);
-				let group = format!("{:010} ", object.group);
+				let tr_id = format!("{:?} ", object.track);
+				let group = format!("{:?} ", object.group);
 				let end = "end";
 				let mut _obj = [tr_id.as_bytes(), group.as_bytes(), end.as_bytes()].concat().into();
 				self.webtransport.send_datagram(_obj).await?; // send as datagram
