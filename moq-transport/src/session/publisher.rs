@@ -220,7 +220,7 @@ impl Publisher {
 			if let Some(chunk) = fragment.chunk().await? {// first chunk
 				// check first chunk type
 				// log::error!("{:?} {:?}", chunk[0], chunk [3]);
-				log::error!("{:?}", chunk);
+				// log::error!("{:?}", chunk);
 					chunk_counter += 1;
 					datagram_mode = true;
 					let mut slice_counter = 0;
